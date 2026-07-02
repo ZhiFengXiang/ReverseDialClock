@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 自定义全屏主题：继承 Material NoActionBar，在主题层注入窗口背景与刘海布局，
+         确保从窗口创建首帧起即铺满整屏，根治 Android 13 等设备导航栏黑边 -->
+    <style name="Theme.Clock" parent="@android:style/Theme.Material.NoActionBar">
+        <!-- 窗口背景设为日间淡蓝，兜底系统栏 inset 区域，避免黑色残留 -->
+        <item name="android:windowBackground">@color/window_bg</item>
+        <!-- 刘海/挖孔屏：内容延伸至刘海两侧（shortEdges），全面屏完整铺满 -->
+        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
+        <!-- 透明系统栏：由 InsetsController 隐藏，设为透明兜底定制系统残留底色 -->
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <!-- 应用自行绘制系统栏背景（edge-to-edge 必需） -->
+        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
+    </style>
+</resources>

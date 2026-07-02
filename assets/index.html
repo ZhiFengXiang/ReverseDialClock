@@ -1,0 +1,1622 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>反转表盘时钟</title>
+  <style>
+/* ========================================
+   CSS 变量定义
+   白天调色板（首屏回退；运行时由 JS 时间渐变主题系统覆盖）
+   ======================================== */
+:root {
+  /* 淡蓝色 ins 拟态背景，清新高级 */
+  --bg: #d9e6f4;           /* 主背景色（淡蓝） */
+  --bg-soft: #e9f2fa;      /* 背景高光 */
+  --bg-deep: #c5d6ea;      /* 背景深色 */
+  --surface: #e6eef7;      /* 表盘主表面色 */
+  --surface-soft: #f3f8fc; /* 表盘高光表面色 */
+  --surface-deep: #d2e0ee; /* 表盘深色表面色 */
+
+  /* 蓝色系：指针和刻度的主色调 */
+  --blue-100: #c9dce8;
+  --blue-200: #a8c5da;
+  --blue-300: #7fa8c4;
+  --blue-400: #5a8cb0;
+
+  /* 墨色系：数字和文字颜色 */
+  --ink: #2c4a64;          /* 主文字色 */
+  --ink-soft: #4a6880;     /* 辅助文字色 */
+
+  /* 阴影色：新拟态(Neumorphism)风格的亮/暗阴影 */
+  --sh-light: rgba(255, 255, 255, 0.9);        /* 高光阴影 */
+  --sh-light-soft: rgba(255, 255, 255, 0.5);   /* 柔和高光阴影 */
+  --sh-dark: rgba(40, 70, 110, 0.16);          /* 暗部阴影 */
+  --sh-dark-soft: rgba(40, 70, 110, 0.07);     /* 柔和暗部阴影 */
+
+  /* 光源偏移量：控制阴影方向（静态，由主题定义） */
+  --light-dx: 10px;        /* 水平光源偏移 */
+  --light-dy: 16px;        /* 垂直光源偏移 */
+
+  /* ========================================
+     新拟态凸起阴影：4级尺寸
+     光源从左上方向右下方照射
+     ======================================== */
+  --raised:
+    calc(-1 * var(--light-dx)) calc(-1 * var(--light-dy)) 24px var(--sh-light),
+    var(--light-dx) var(--light-dy) 28px var(--sh-dark),
+    calc(-1 * var(--light-dx) * 0.3) calc(-1 * var(--light-dy) * 0.3) 8px var(--sh-light-soft),
+    calc(var(--light-dx) * 0.3) calc(var(--light-dy) * 0.3) 8px var(--sh-dark-soft);
+  --raised-md:
+    calc(-1 * var(--light-dx) * 0.7) calc(-1 * var(--light-dy) * 0.7) 18px var(--sh-light),
+    calc(var(--light-dx) * 0.7) calc(var(--light-dy) * 0.7) 20px var(--sh-dark);
+  --raised-sm:
+    calc(-1 * var(--light-dx) * 0.4) calc(-1 * var(--light-dy) * 0.4) 10px var(--sh-light),
+    calc(var(--light-dx) * 0.4) calc(var(--light-dy) * 0.4) 10px var(--sh-dark);
+  --raised-xs:
+    calc(-1 * var(--light-dx) * 0.25) calc(-1 * var(--light-dy) * 0.25) 6px var(--sh-light),
+    calc(var(--light-dx) * 0.25) calc(var(--light-dy) * 0.25) 6px var(--sh-dark);
+
+  /* ========================================
+     新拟态凹陷阴影：3级尺寸
+     与凸起阴影方向相反，营造凹陷效果
+     ======================================== */
+  --inset:
+    inset calc(-1 * var(--light-dx) * 1.5) calc(-1 * var(--light-dy) * 1.5) 18px var(--sh-light),
+    inset calc(var(--light-dx) * 1.5) calc(var(--light-dy) * 1.5) 20px var(--sh-dark);
+  --inset-md:
+    inset calc(-1 * var(--light-dx) * 1.2) calc(-1 * var(--light-dy) * 1.2) 14px var(--sh-light),
+    inset calc(var(--light-dx) * 1.2) calc(var(--light-dy) * 1.2) 16px var(--sh-dark);
+  --inset-sm:
+    inset calc(-1 * var(--light-dx) * 0.9) calc(-1 * var(--light-dy) * 0.9) 10px var(--sh-light),
+    inset calc(var(--light-dx) * 0.9) calc(var(--light-dy) * 0.9) 10px var(--sh-dark);
+
+  /* 几何感无衬线字体栈 */
+  --font-geometric: 'Avenir Next', 'Avenir', 'Century Gothic',
+                    'Futura', 'Tw Cen MT', 'Franklin Gothic', sans-serif;
+}
+
+/* ========================================
+   全局样式重置
+   ======================================== */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+
+*:focus {
+  outline: none;
+}
+
+html, body {
+  height: 100%;
+}
+
+body {
+  position: fixed;        /* 固定定位，防止移动端地址栏抖动与滚动 */
+  inset: 0;
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* 静态 ins 拟态淡蓝渐变背景（无动画） */
+  background:
+    radial-gradient(ellipse at 30% 20%, var(--bg-soft) 0%, transparent 50%),
+    radial-gradient(ellipse at 70% 80%, var(--bg-deep) 0%, transparent 50%),
+    var(--bg);
+  font-family: var(--font-geometric);
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow: hidden;
+  touch-action: none;            /* 禁用触摸滚动/移动 */
+  overscroll-behavior: none;     /* 禁用过度滚动 */
+  transition: background 1.5s ease, color 1.5s ease;  /* 主题切换平滑过渡 */
+}
+
+/* ========================================
+   时钟主体：圆形表盘容器
+   ======================================== */
+.clock {
+  position: relative;
+  width: min(92vmin, 640px);
+  height: min(92vmin, 640px);
+  border-radius: 50%;
+  /* 表盘径向渐变：左上高光，右下深阴影 */
+  background:
+    radial-gradient(circle at 35% 30%, var(--surface-soft) 0%, var(--surface) 60%, var(--surface-deep) 100%);
+  box-shadow: var(--raised);  /* 凸起阴影效果 */
+  user-select: none;
+  z-index: 2;
+  transition: box-shadow 1.5s ease, background 1.5s ease;
+  will-change: transform;
+  overflow: hidden;
+}
+
+/* 表盘静态高光：新拟态反光（无动画） */
+.clock-highlight {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background:
+    radial-gradient(ellipse 80% 60% at calc(50% - var(--light-dx) * 2) calc(50% - var(--light-dy) * 2),
+      rgba(255, 255, 255, 0.45) 0%,
+      rgba(255, 255, 255, 0.25) 15%,
+      rgba(255, 255, 255, 0.08) 35%,
+      transparent 60%);
+  pointer-events: none;
+  z-index: 10;
+  transition: background 0s;
+}
+
+/* ========================================
+   环形表盘：时/分/秒三个旋转环
+   反转表盘的核心设计：环旋转，指针固定
+   ======================================== */
+.ring {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  border-radius: 50%;
+  transform-origin: center center;
+  box-shadow: var(--inset-md);  /* 凹陷阴影效果 */
+  transition: background 0s;
+  overflow: hidden;
+  will-change: transform;  /* 120帧合成层提升 */
+}
+
+/* 环形上的微妙高光 */
+.ring::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background:
+    radial-gradient(ellipse at calc(50% - var(--light-dx)) calc(50% - var(--light-dy)),
+      rgba(255, 255, 255, 0.15) 0%,
+      transparent 40%);
+  pointer-events: none;
+}
+
+/* 小时环：最外层最大的环 */
+.ring--hours {
+  width: 96%;
+  height: 96%;
+  background:
+    radial-gradient(circle at 40% 35%, rgba(180, 200, 220, 0.06) 0%, rgba(120, 160, 190, 0.04) 80%);
+  box-shadow: var(--inset);
+  transition: transform 1.1s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* 分钟环：中间层 */
+.ring--minutes {
+  width: 68%;
+  height: 68%;
+  background:
+    radial-gradient(circle at 40% 35%, rgba(160, 190, 215, 0.07) 0%, rgba(120, 160, 190, 0.05) 80%);
+  box-shadow: var(--inset-md);
+  transition: transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* 秒环：最内层最小的环 */
+.ring--seconds {
+  width: 42%;
+  height: 42%;
+  background:
+    radial-gradient(circle at 40% 35%, rgba(180, 200, 220, 0.1) 0%, rgba(160, 190, 215, 0.06) 80%);
+  box-shadow: var(--inset-sm);
+}
+
+/* ========================================
+   固定指针：始终指向12点方向（正上方）
+   ======================================== */
+.hand {
+  position: absolute;
+  top: 2%;
+  left: 50%;
+  width: 6px;
+  height: 48%;
+  transform: translateX(-50%);
+  /* 指针渐变：左侧高光，右侧阴影，营造圆柱质感 */
+  background:
+    linear-gradient(90deg,
+      rgba(255, 255, 255, 0.4) 0%,
+      var(--blue-300) 25%,
+      var(--blue-400) 75%,
+      rgba(0, 0, 0, 0.15) 100%);
+  border-radius: 999px;
+  box-shadow:
+    var(--raised-sm),
+    0 0 10px rgba(120, 160, 200, 0.3),
+    inset 1px 0 2px rgba(255, 255, 255, 0.5),
+    inset -1px 0 2px rgba(30, 50, 70, 0.2);
+  z-index: 20;
+}
+
+/* 指针顶部高光 */
+.hand::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  background: linear-gradient(180deg,
+    rgba(255, 255, 255, 0.5) 0%,
+    transparent 40%);
+  pointer-events: none;
+}
+
+/* 中心点：指针根部的圆形装饰 */
+.center-dot {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 5%;
+  height: 5%;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at calc(35% - var(--light-dx) * 0.1) calc(30% - var(--light-dy) * 0.1),
+      #f0f5fa 0%, var(--blue-200) 70%);
+  box-shadow:
+    var(--raised-xs),
+    inset 0 0 4px rgba(255, 255, 255, 0.7);
+  z-index: 21;
+}
+
+/* ========================================
+   刻度线：分布在各环边缘
+   ======================================== */
+.tick {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 2px;
+  height: 10px;
+  background: var(--blue-300);
+  border-radius: 999px;
+  transform-origin: center center;
+  opacity: 0.9;
+  box-shadow: calc(-1 * var(--light-dx) * 0.08) calc(-1 * var(--light-dy) * 0.08) 1px var(--sh-light-soft),
+              calc(var(--light-dx) * 0.08) calc(var(--light-dy) * 0.08) 1px var(--sh-dark-soft);
+  transition: background 0s;
+}
+
+/* 分钟环刻度 */
+.ring--minutes .tick {
+  height: 8px;
+  background: var(--blue-400);
+  opacity: 0.8;
+}
+
+/* 秒环刻度 */
+.ring--seconds .tick {
+  height: 7px;
+  background: var(--blue-300);
+  opacity: 0.75;
+}
+
+/* 主要刻度（每5分钟/小时位置）：更粗更长 */
+.tick--major {
+  width: 3px;
+  height: 16px;
+  background: var(--blue-400);
+  opacity: 1;
+  box-shadow:
+    calc(-1 * var(--light-dx) * 0.1) calc(-1 * var(--light-dy) * 0.1) 2px var(--sh-light),
+    calc(var(--light-dx) * 0.1) calc(var(--light-dy) * 0.1) 2px var(--sh-dark),
+    0 0 4px rgba(100, 150, 190, 0.3);
+}
+
+.ring--minutes .tick--major {
+  height: 14px;
+  background: var(--ink);
+  opacity: 0.85;
+  box-shadow:
+    calc(-1 * var(--light-dx) * 0.1) calc(-1 * var(--light-dy) * 0.1) 2px var(--sh-light),
+    calc(var(--light-dx) * 0.1) calc(var(--light-dy) * 0.1) 2px var(--sh-dark);
+}
+
+.ring--seconds .tick--major {
+  height: 11px;
+  background: var(--blue-400);
+  opacity: 0.9;
+}
+
+/* ========================================
+   数字标签：显示在各环上的时间数字
+   ======================================== */
+.number {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  font-family: var(--font-geometric);
+  font-weight: 600;
+  font-size: clamp(12px, 2.6vmin, 17px);
+  letter-spacing: 0.02em;
+  color: var(--ink);
+  transform-origin: center center;
+  white-space: nowrap;
+  text-shadow:
+    calc(var(--light-dx) * 0.08) calc(var(--light-dy) * 0.08) 1px rgba(255, 255, 255, 0.6),
+    calc(-1 * var(--light-dx) * 0.08) calc(-1 * var(--light-dy) * 0.08) 1px rgba(40, 60, 80, 0.06);
+  z-index: 15;
+  will-change: transform;
+  transition: color 1.5s ease, text-shadow 1.5s ease;
+}
+
+/* 小时数字：最大最醒目 */
+.number--hours {
+  font-size: clamp(15px, 3.2vmin, 22px);
+  font-weight: 700;
+  color: var(--ink);
+  text-shadow:
+    calc(var(--light-dx) * 0.1) calc(var(--light-dy) * 0.1) 1px rgba(255, 255, 255, 0.7),
+    calc(-1 * var(--light-dx) * 0.1) calc(-1 * var(--light-dy) * 0.1) 1px rgba(40, 60, 80, 0.08);
+}
+
+/* 分钟数字：中等大小 */
+.number--minutes {
+  font-size: clamp(11px, 2.3vmin, 16px);
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+/* 秒数字：最小 */
+.number--seconds {
+  font-size: clamp(9px, 1.7vmin, 12px);
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+/* ========================================
+   时钟标签：时钟上方居中显示城市与时区
+   ======================================== */
+.clock-label {
+  position: fixed;
+  top: max(20px, env(safe-area-inset-top));
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: var(--font-geometric);
+  font-size: clamp(13px, 3.4vmin, 18px);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--ink);
+  text-align: center;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 30;
+  transition: color 1.5s ease, opacity 0.35s ease;
+}
+
+/* ========================================
+   防烧屏：时钟包裹容器支持非线性微偏移过渡
+   ======================================== */
+.clock-wrapper {
+  position: relative;
+  z-index: 2;
+  /* 120帧丝滑过渡：easeOutQuint 曲线，合成层提升 */
+  transition: transform 0.8s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.35s ease;
+  will-change: transform, opacity;
+}
+.clock-wrapper.switching {
+  opacity: 0.55;
+  transform: scale(0.97);
+}
+
+/* ========================================
+   多时区时钟：底部拟态添加按钮（无极变形为城市卡片）
+   ======================================== */
+.add-button {
+  position: fixed;
+  bottom: max(24px, env(safe-area-inset-bottom));
+  left: 50%;
+  transform: translateX(-50%);
+  transform-origin: center center;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: var(--raised-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  user-select: none;            /* 禁止文字选区高亮，使按钮成为纯点击元素 */
+  -webkit-user-select: none;    /* 兼容 WebView/WebKit 内核 */
+  z-index: 50;
+  transition:
+    width 0.45s cubic-bezier(0.34, 1.56, 0.64, 1),
+    height 0.45s cubic-bezier(0.34, 1.56, 0.64, 1),
+    border-radius 0.45s cubic-bezier(0.34, 1.56, 0.64, 1),
+    box-shadow 0.45s ease,
+    transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1),
+    opacity 0.3s ease,
+    background 1.5s ease;
+  overflow: hidden;
+  will-change: transform, width, height;
+}
+.add-button.hidden {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-50%) scale(0.6);
+}
+/* 展开态：四周等宽留白（padding 统一 18px）+ space-between 行均匀分布，
+   高度 320px 容纳 4 行（11 城市/3 列≈4 行），首行贴顶、末行贴底，四周留白等宽 */
+.add-button.open {
+  width: min(86vw, 360px);
+  height: 320px;
+  border-radius: 28px;
+  box-shadow: var(--raised);
+  padding: 18px;
+  flex-wrap: wrap;
+  align-content: space-between;
+  gap: 12px;
+}
+.add-button__icon {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 34px;
+  font-weight: 300;
+  color: var(--ink);
+  transition: transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.3s ease;
+  will-change: transform, opacity;
+  pointer-events: none;
+  line-height: 1;
+}
+.add-button.open .add-button__icon {
+  transform: translate(-50%, -50%) rotate(45deg);
+  opacity: 0;
+}
+.add-button__delete-icon {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) scale(0.5);
+  opacity: 0;
+  pointer-events: none;
+  color: #ff3b30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  will-change: transform, opacity;
+  transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.3s ease;
+}
+.add-button.delete-mode .add-button__delete-icon {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1);
+}
+.add-button.delete-mode .add-button__icon {
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(0.5) rotate(-90deg);
+}
+/* 长按表盘丝滑按压动画：非线性 缩小→放大 */
+@keyframes press-bounce {
+  0%   { transform: scale(1); }
+  35%  { transform: scale(0.95); }
+  70%  { transform: scale(1.03); }
+  100% { transform: scale(1); }
+}
+.clock.pressing {
+  animation: press-bounce 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.city-card {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-content: space-between;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s ease;
+}
+.add-button.open .city-card {
+  opacity: 1;
+  pointer-events: auto;
+}
+.city-option {
+  flex: 1 1 calc(33.333% - 8px);
+  min-width: 72px;       /* 320px 窄屏下 3×72+2×10=236px < 243px 内容区，确保 3 列不换行 */
+  padding: 9px 7px;
+  border-radius: 14px;
+  background: var(--surface-soft);
+  box-shadow: var(--raised-xs);
+  text-align: center;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  cursor: pointer;
+  user-select: none;
+  transition: box-shadow 0.25s ease, background 1.5s ease, transform 0.15s ease;
+}
+.city-option:active {
+  transform: scale(0.94);
+  box-shadow: var(--inset-sm);
+}
+/* 时区去重：已添加时区的城市选项显示为禁用态 */
+.city-option.disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+.city-option__tz {
+  display: block;
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--ink-soft);
+  margin-top: 2px;
+}
+
+/* ========================================
+   多时区时钟：点式进度条
+   ======================================== */
+.dots {
+  position: fixed;
+  bottom: 104px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: none;
+  gap: 10px;
+  z-index: 40;
+  transition: opacity 0.4s ease;
+}
+/* 进度点：统一使用 999px 大圆角——非 active(8×8) 为正圆、active(22×8) 为胶囊；
+   不对 border-radius 做过渡，避免切换时先变方形再变圆 */
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--surface-deep);
+  box-shadow: var(--inset-sm);
+  cursor: pointer;
+  will-change: transform, width;
+  transition: width 0.4s cubic-bezier(0.34, 1.56, 0.64, 1),
+              background 0.4s cubic-bezier(0.34, 1.56, 0.64, 1),
+              box-shadow 0.4s ease;
+}
+.dot.active {
+  width: 22px;
+  border-radius: 999px;
+  background: var(--blue-400);
+  box-shadow: var(--raised-xs);
+}
+  </style>
+</head>
+<body>
+  <!-- 时钟标签：显示当前时钟的城市与时区 -->
+  <div class="clock-label" id="clockLabel"></div>
+  <!-- 防烧屏包裹层：周期性垂直微偏移 -->
+  <div class="clock-wrapper" id="clockWrapper">
+  <!-- 时钟主体 -->
+  <main class="clock" aria-label="反转表盘时钟">
+    <div class="clock-highlight" aria-hidden="true"></div>
+    <!-- 三个旋转环：时、分、秒 -->
+    <div class="ring ring--hours" aria-hidden="true"></div>
+    <div class="ring ring--minutes" aria-hidden="true"></div>
+    <div class="ring ring--seconds" aria-hidden="true"></div>
+    <!-- 固定指针（指向12点方向） -->
+    <div class="hand" aria-hidden="true"></div>
+    <!-- 中心点装饰 -->
+    <div class="center-dot" aria-hidden="true"></div>
+  </main>
+  </div>
+  <!-- 多时区时钟：点式进度条 -->
+  <div class="dots" id="dots"></div>
+  <!-- 多时区时钟：底部拟态添加按钮（无极变形为城市卡片） -->
+  <div class="add-button" id="addButton" role="button" aria-label="添加时区时钟">
+    <span class="add-button__icon" aria-hidden="true">+</span>
+    <span class="add-button__delete-icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="#ff3b30" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="3 6 5 6 21 6"></polyline>
+        <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path>
+        <path d="M10 11v6M14 11v6"></path>
+        <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"></path>
+      </svg>
+    </span>
+    <div class="city-card" id="cityCard"></div>
+  </div>
+  <script>
+/**
+ * ========================================
+ * 反转表盘时钟 - 核心逻辑
+ * ========================================
+ *
+ * 设计特点：
+ * 1. 反转表盘：指针固定指向12点，时/分/秒三个环反向旋转
+ * 2. 网络时间同步：通过HTTP Date头获取准确时间
+ * 3. 时间渐变主题（正午白天峰值/午夜夜晚谷值，线性插值）
+ * 4. 新拟态设计：柔和的凸起/凹陷阴影效果
+ * 5. 防烧屏：每5分钟垂直微移
+ */
+(function () {
+  'use strict';
+
+  /* ========================================
+     时间同步模块
+     ======================================== */
+
+  // 本地时间与服务器时间的偏移量（毫秒）
+  var timeOffset = 0;
+
+  /* ========================================
+     多时区时钟数据结构
+     ======================================== */
+
+  // 本地时区偏移（分钟）
+  var LOCAL_TZ_OFFSET = -new Date().getTimezoneOffset();
+
+  // 时钟列表：第一项为本地默认时钟
+  var clocks = [
+    { id: 0, city: '本地', tzOffsetMinutes: LOCAL_TZ_OFFSET }
+  ];
+  var currentIndex = 0;
+  var nextClockId = 1;
+
+  // 城市选项（UTC 固定偏移，不处理夏令时）
+  var CITY_OPTIONS = [
+    { city: '北京',     tz: 480 },
+    { city: '东京',     tz: 540 },
+    { city: '悉尼',     tz: 600 },
+    { city: '迪拜',     tz: 240 },
+    { city: '莫斯科',   tz: 180 },
+    { city: '新德里',   tz: 330 },
+    { city: '雅加达',   tz: 420 },
+    { city: '巴黎',     tz: 60 },
+    { city: '伦敦',     tz: 0 },
+    { city: '纽约',     tz: -300 },
+    { city: '洛杉矶',   tz: -480 }
+  ];
+  // 最大时钟数（含本地默认时钟）：1 本地 + 5 添加 = 6
+  var MAX_CLOCKS = 6;
+  // localStorage 存储 key（持久化已添加时钟与当前索引）
+  var STORAGE_KEY = 'clock_app_v1';
+
+  /* ========================================
+     触觉反馈封装（JS↔Android 震动桥）
+     桥对象 window.AndroidVibration 由 MainActivity 注入；
+     非 Android 环境（如浏览器直接打开）window.AndroidVibration 为 undefined，静默跳过不报错。
+     ======================================== */
+  /**
+   * 触发 3 次短促渐强震动（间隔 45ms→75ms 递增，振幅 70→120→170/255 渐强）
+   * 场景：点击加号按钮（展开/收起城市卡片）、长按时钟进入删除模式、点击时区选项添加时钟
+   */
+  function vibrateAdd() {
+    if (window.AndroidVibration) {
+      try { AndroidVibration.vibrateAdd(); } catch (e) { /* 静默降级 */ }
+    }
+  }
+  /**
+   * 触发 4 次短促连续震动
+   * 场景：点击删除按钮（删除当前时钟）
+   */
+  function vibrateDelete() {
+    if (window.AndroidVibration) {
+      try { AndroidVibration.vibrateDelete(); } catch (e) { /* 静默降级 */ }
+    }
+  }
+
+  /**
+   * 同步网络时间
+   * 通过向当前页面发送HEAD请求，读取响应头中的Date字段
+   */
+  function syncNetworkTime() {
+    try {
+      var xhr = new XMLHttpRequest();
+      xhr.open('HEAD', window.location.href, true);
+      xhr.onreadystatechange = function () {
+        if (xhr.readyState === 2) {
+          var serverDate = xhr.getResponseHeader('Date');
+          if (serverDate) {
+            var serverTime = new Date(serverDate).getTime();
+            var localTime = Date.now();
+            timeOffset = serverTime - localTime;
+          }
+          xhr.abort();
+        }
+      };
+      xhr.send();
+    } catch (e) {
+      // 网络请求失败时静默降级使用本地时间
+    }
+  }
+
+  /**
+   * 获取校准后的当前时间
+   */
+  function getNow() {
+    return new Date(Date.now() + timeOffset);
+  }
+
+  /* ========================================
+     多时区时钟：时区时间函数
+     ======================================== */
+
+  function getTimezoneDate(tzOffsetMinutes) {
+    // getNow().getTime() 已是绝对 UTC 毫秒，直接叠加目标时区偏移即可
+    // 使用 getUTC* 方法读取分量，得到目标时区的墙上时间
+    var now = getNow();
+    return new Date(now.getTime() + tzOffsetMinutes * 60000);
+  }
+  function getCurrentClockDate() {
+    return getTimezoneDate(clocks[currentIndex].tzOffsetMinutes);
+  }
+
+  /* ========================================
+     角度计算模块
+     反转表盘：环逆时针旋转，指针固定
+     ======================================== */
+
+  function getSecondsRingAngle(date) {
+    var angle = -(date.getUTCSeconds() + date.getUTCMilliseconds() / 1000) * 6;
+    return angle === 0 ? 0 : angle;
+  }
+
+  function getMinutesRingAngle(date) {
+    var angle = -(date.getUTCMinutes() + date.getUTCSeconds() / 60 + date.getUTCMilliseconds() / 60000) * 6;
+    return angle === 0 ? 0 : angle;
+  }
+
+  function getHoursRingAngle(date) {
+    var angle = -((date.getUTCHours() % 12) + date.getUTCMinutes() / 60 + date.getUTCSeconds() / 3600) * 30;
+    return angle === 0 ? 0 : angle;
+  }
+
+  /**
+   * 获取浮点数格式的小时数（含小数）
+   */
+  function getHoursFloat(date) {
+    return date.getUTCHours() + date.getUTCMinutes() / 60 + date.getUTCSeconds() / 3600;
+  }
+
+  /* ========================================
+     主题模块：时间渐变主题系统（正午白天峰值/午夜夜晚谷值/线性插值全部主题变量）
+     ======================================== */
+
+  // 白天调色板（取自原 :root 静态变量值，作为正午 t=1 时的峰值）
+  var DAY_PALETTE = {
+    bg: '#d9e6f4', bgSoft: '#e9f2fa', bgDeep: '#c5d6ea',
+    surface: '#e6eef7', surfaceSoft: '#f3f8fc', surfaceDeep: '#d2e0ee',
+    blue100: '#c9dce8', blue200: '#a8c5da', blue300: '#7fa8c4', blue400: '#5a8cb0',
+    ink: '#2c4a64', inkSoft: '#4a6880',
+    shLight: 'rgba(255, 255, 255, 0.9)', shLightSoft: 'rgba(255, 255, 255, 0.5)',
+    shDark: 'rgba(40, 70, 110, 0.16)', shDarkSoft: 'rgba(40, 70, 110, 0.07)',
+    lightDx: 10, lightDy: 16
+  };
+
+  // 夜晚调色板（取自原 [data-theme='night'] 静态变量值，作为午夜 t=0 时的谷值）
+  var NIGHT_PALETTE = {
+    bg: '#000000', bgSoft: '#000000', bgDeep: '#000000',
+    surface: '#1a2028', surfaceSoft: '#232a35', surfaceDeep: '#12171d',
+    blue100: '#4a6080', blue200: '#5d7598', blue300: '#7a95b8', blue400: '#9bb5d4',
+    ink: '#c8d8e8', inkSoft: '#8a9cb5',
+    shLight: 'rgba(120, 140, 170, 0.08)', shLightSoft: 'rgba(120, 140, 170, 0.04)',
+    shDark: 'rgba(0, 0, 0, 0.5)', shDarkSoft: 'rgba(0, 0, 0, 0.3)',
+    lightDx: 5, lightDy: 5
+  };
+
+  // 调色板键名 → CSS 变量名映射（运行时通过 setProperty 注入 :root）
+  var CSS_VAR_MAP = {
+    bg: '--bg', bgSoft: '--bg-soft', bgDeep: '--bg-deep',
+    surface: '--surface', surfaceSoft: '--surface-soft', surfaceDeep: '--surface-deep',
+    blue100: '--blue-100', blue200: '--blue-200', blue300: '--blue-300', blue400: '--blue-400',
+    ink: '--ink', inkSoft: '--ink-soft',
+    shLight: '--sh-light', shLightSoft: '--sh-light-soft', shDark: '--sh-dark', shDarkSoft: '--sh-dark-soft',
+    lightDx: '--light-dx', lightDy: '--light-dy'
+  };
+
+  // 线性插值：返回 a 与 b 之间比例 t 处的数值
+  function lerp(a, b, t) { return a + (b - a) * t; }
+
+  // 解析颜色字符串：支持 '#RRGGBB' 与 'rgba(r,g,b,a)' 两种格式，返回 {r,g,b,a}
+  function parseColor(c) {
+    // 十六进制 '#RRGGBB'：拆分 R/G/B 三个分量，alpha 固定为 1
+    var hex = /^#([0-9a-fA-F]{6})$/.exec(c);
+    if (hex) {
+      return {
+        r: parseInt(hex[1].substring(0, 2), 16),
+        g: parseInt(hex[1].substring(2, 4), 16),
+        b: parseInt(hex[1].substring(4, 6), 16),
+        a: 1
+      };
+    }
+    // 'rgba(r,g,b,a)'：正则提取四个分量
+    var rgba = /^rgba\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*\)$/.exec(c);
+    if (rgba) {
+      return { r: parseFloat(rgba[1]), g: parseFloat(rgba[2]), b: parseFloat(rgba[3]), a: parseFloat(rgba[4]) };
+    }
+    // 兜底：无法解析时返回黑色不透明
+    return { r: 0, g: 0, b: 0, a: 1 };
+  }
+
+  // 颜色线性插值：解析两色后按 t 插值 r/g/b/a，返回 'rgba(r, g, b, a)' 字符串
+  // r/g/b 取整，alpha 保留 3 位小数
+  function lerpColor(a, b, t) {
+    var ca = parseColor(a);
+    var cb = parseColor(b);
+    var r = Math.round(lerp(ca.r, cb.r, t));
+    var g = Math.round(lerp(ca.g, cb.g, t));
+    var bl = Math.round(lerp(ca.b, cb.b, t));
+    var al = Math.round(lerp(ca.a, cb.a, t) * 1000) / 1000;
+    return 'rgba(' + r + ', ' + g + ', ' + bl + ', ' + al + ')';
+  }
+
+  // 计算时间渐变因子 t∈[0,1]：以当前时钟墙上时间为准（nowDate 已含时区偏移）
+  //   h ≤ 12 时 t = h/12（00:00→0，06:00→0.5，12:00→1）
+  //   h >  12 时 t = (24-h)/12（18:00→0.5，24:00→0）
+  //   即正午为白天峰值(t=1)，午夜为夜晚谷值(t=0)，早晚对称过渡
+  function computeThemeFactor(date) {
+    var h = date.getUTCHours() + date.getUTCMinutes()/60 + date.getUTCSeconds()/3600;
+    if (h <= 12) return h / 12;
+    return (24 - h) / 12;
+  }
+
+  // 应用时间渐变主题：每次调用都根据当前时间计算 t，并把全部主题变量线性插值后写入 :root
+  function applyGradientTheme() {
+    var now = nowDate();
+    var t = computeThemeFactor(now);
+    for (var key in CSS_VAR_MAP) {
+      var value;
+      // 光源偏移为数值，插值后追加 'px' 单位
+      // 注意：t=1（正午）→白天，t=0（午夜）→夜晚，故 lerp 从 NIGHT→DAY
+      if (key === 'lightDx' || key === 'lightDy') {
+        value = lerp(NIGHT_PALETTE[key], DAY_PALETTE[key], t) + 'px';
+      } else {
+        // 其余为颜色值，按 rgba 分量插值（NIGHT→DAY，保证 t=1 时为白天）
+        value = lerpColor(NIGHT_PALETTE[key], DAY_PALETTE[key], t);
+      }
+      document.documentElement.style.setProperty(CSS_VAR_MAP[key], value);
+    }
+  }
+
+  /* ========================================
+     表盘构建模块
+     ======================================== */
+
+  var TICK_INSET = 10;    // 刻度距环边缘的内边距
+  var NUMBER_INSET = 14;  // 数字距环边缘的内边距
+  var rafId = null;       // requestAnimationFrame ID
+  var resizeTimer = null; // 窗口大小调整定时器
+  var dialBuilt = false;  // 表盘是否已构建标记
+
+  // 空闲分级降帧相关变量（三级：活跃全速 / 10秒后60Hz / 1分钟后30Hz）
+  var lastInteractionTime = performance.now();
+  var IDLE_TIER_60HZ = 10000;        // 10 秒无操作 → 降为 60Hz
+  var IDLE_TIER_30HZ = 60000;        // 1 分钟无操作 → 降为 30Hz
+  var MIN_FRAME_60 = 1000 / 60;      // ~16.67ms（60Hz 节流间隔）
+  var MIN_FRAME_30 = 1000 / 30;      // ~33.33ms（30Hz 节流间隔）
+  var lastUpdateTime = 0;
+
+  // 缓存 DOM 引用，避免每帧查询
+  var cachedRings = null;
+  var cachedWrapper = null;
+  function getCachedRings() {
+    if (!cachedRings) {
+      cachedRings = queryRings();
+    }
+    return cachedRings;
+  }
+  function invalidateCache() {
+    cachedRings = null;
+    cachedWrapper = null;
+  }
+
+  // URL参数解析：支持 ?hour=14&minute=30 格式模拟指定时间
+  var simHour = null, simMinute = 0;
+  (function parseSimTime() {
+    try {
+      var params = new URLSearchParams(window.location.search);
+      if (params.has('hour')) {
+        simHour = parseFloat(params.get('hour'));
+        if (isNaN(simHour)) simHour = null;
+        simMinute = parseFloat(params.get('minute')) || 0;
+      }
+    } catch (e) {
+      // URL参数解析失败，使用真实时间
+    }
+  })();
+
+  /**
+   * 获取当前时间（支持模拟时间）
+   */
+  function nowDate() {
+    if (simHour !== null) {
+      var d = new Date();
+      d.setHours(Math.floor(simHour), Math.floor(simMinute), d.getSeconds(), d.getMilliseconds());
+      return d;
+    }
+    return getCurrentClockDate();
+  }
+
+  /* ========================================
+     启动动画模块
+     页面加载时从0度平滑旋转到当前时间角度
+     ======================================== */
+
+  var ANIM_DURATION = 2000;  // 启动动画时长（毫秒）
+  var animStartTime = null;
+  var animating = true;
+
+  /* 多时区时钟切换过渡状态 */
+  var SWITCH_DURATION = 800;
+  var switchStartTime = 0;
+  var isSwitching = false;
+  var switchFrom = { sa: 0, ma: 0, ha: 0 };
+  function easeInOutCubic(t) { return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; }
+
+  /**
+   * 缓动函数：easeOutCubic
+   */
+  function easeOutCubic(t) { return 1 - Math.pow(1 - t, 3); }
+
+  /* ========================================
+     DOM查询与操作工具函数
+     ======================================== */
+
+  function queryRings() {
+    return {
+      secondsRing: document.querySelector('.ring--seconds'),
+      minutesRing: document.querySelector('.ring--minutes'),
+      hoursRing: document.querySelector('.ring--hours'),
+    };
+  }
+
+  function clearChildren(el) {
+    while (el && el.firstChild) {
+      el.removeChild(el.firstChild);
+    }
+  }
+
+  /**
+   * 在环上构建刻度线
+   */
+  function buildTicks(ring, count, inset, majorEvery) {
+    var radius = ring.offsetWidth / 2 - inset;
+    for (var i = 0; i < count; i++) {
+      var angle = (i / count) * 360;
+      var tick = document.createElement('div');
+      tick.className = 'tick' + (i % majorEvery === 0 ? ' tick--major' : '');
+      tick.style.transform =
+        'translate(-50%, -50%) rotate(' + angle + 'deg) translateY(' + (-radius) + 'px)';
+      ring.appendChild(tick);
+    }
+    return radius;
+  }
+
+  // 存储所有数字元素的数据，用于后续旋转计算
+  var numberData = [];
+
+  function buildNumbers(clock, numbers, angleFn, radius, ringKey) {
+    for (var i = 0; i < numbers.length; i++) {
+      var angle = angleFn(numbers[i]);
+      var num = document.createElement('div');
+      num.className = 'number number--' + ringKey;
+      num.textContent = String(numbers[i]);
+      clock.appendChild(num);
+      numberData.push({ el: num, baseAngle: angle, radius: radius, ringKey: ringKey });
+    }
+  }
+
+  /**
+   * 构建完整表盘：刻度 + 数字
+   */
+  function buildDial() {
+    var rings = queryRings();
+    var secondsRing = rings.secondsRing;
+    var minutesRing = rings.minutesRing;
+    var hoursRing = rings.hoursRing;
+    var clock = document.querySelector('.clock');
+    if (!secondsRing || !minutesRing || !hoursRing || !clock) {
+      return;
+    }
+    // 等待元素尺寸就绪
+    if (secondsRing.offsetWidth === 0 || minutesRing.offsetWidth === 0 || hoursRing.offsetWidth === 0) {
+      setTimeout(buildDial, 50);
+      return;
+    }
+
+    // 清空旧内容
+    clearChildren(hoursRing);
+    clearChildren(minutesRing);
+    clearChildren(secondsRing);
+    numberData = [];
+    var oldNumbers = clock.querySelectorAll('.number');
+    for (var k = 0; k < oldNumbers.length; k++) {
+      oldNumbers[k].remove();
+    }
+
+    // 构建小时环：12个主刻度 + 12个数字(1-12)
+    var hrsTickR = buildTicks(hoursRing, 12, TICK_INSET, 1);
+    buildNumbers(clock, [1,2,3,4,5,6,7,8,9,10,11,12],
+      function (v) { return v * 30; }, hrsTickR - 26, 'hours');
+
+    // 构建分钟环：60个刻度（每5个主刻度）+ 6个数字(0,10,20,30,40,50)
+    var minTickR = buildTicks(minutesRing, 60, TICK_INSET, 5);
+    buildNumbers(clock, [0,10,20,30,40,50],
+      function (v) { return v * 6; }, minTickR - 22, 'minutes');
+
+    // 构建秒环：60个刻度（每5个主刻度）+ 12个数字(0,5,10...55)
+    var secTickR = buildTicks(secondsRing, 60, TICK_INSET, 5);
+    buildNumbers(clock, [0,5,10,15,20,25,30,35,40,45,50,55],
+      function (v) { return v * 6; }, secTickR - 16, 'seconds');
+
+    dialBuilt = true;
+    invalidateCache();
+  }
+
+  /* ========================================
+     角度累积计算
+     处理360度→0度的跨越问题，避免环反向旋转
+     ======================================== */
+
+  function computeAngles() {
+    var now = nowDate();
+    var targetSa = getSecondsRingAngle(now);
+    var targetMa = getMinutesRingAngle(now);
+    var targetHa = getHoursRingAngle(now);
+
+    // 启动入场动画
+    var startupK = 1;
+    if (animating) {
+      var elapsed = performance.now() - animStartTime;
+      var t = Math.min(elapsed / ANIM_DURATION, 1);
+      startupK = easeOutCubic(t);
+      if (t >= 1) animating = false;
+    }
+
+    var sa = targetSa * startupK;
+    var ma = targetMa * startupK;
+    var ha = targetHa * startupK;
+
+    // 时钟切换过渡（非线性插值）
+    if (isSwitching) {
+      var sElapsed = performance.now() - switchStartTime;
+      var sT = Math.min(sElapsed / SWITCH_DURATION, 1);
+      var sK = easeInOutCubic(sT);
+      sa = switchFrom.sa + (sa - switchFrom.sa) * sK;
+      ma = switchFrom.ma + (ma - switchFrom.ma) * sK;
+      ha = switchFrom.ha + (ha - switchFrom.ha) * sK;
+      if (sT >= 1) isSwitching = false;
+    }
+
+    return { sa: sa, ma: ma, ha: ha };
+  }
+
+  var lastAngles = { sa: null, ma: null, ha: null };
+  var cumulative = { ma: null, ha: null };
+
+  /**
+   * 将绝对角度转换为累积角度
+   * 解决角度从359°→0°时的跳变问题
+   */
+  function toCumulative(prev, next) {
+    if (prev === null) return next;
+    var diff = next - prev;
+    while (diff > 180)  { next -= 360; diff -= 360; }
+    while (diff < -180) { next += 360; diff += 360; }
+    return next;
+  }
+
+  /**
+   * 更新时钟标签：显示当前时钟的城市与时区信息
+   * 格式：城市 · UTC±h(:mm)
+   */
+  function updateClockLabel() {
+    var labelEl = document.getElementById('clockLabel');
+    if (!labelEl) return;
+    var c = clocks[currentIndex];
+    var tz = c.tzOffsetMinutes;
+    var h = Math.floor(Math.abs(tz) / 60);
+    var m = Math.abs(tz) % 60;
+    var tzLabel = 'UTC' + (tz >= 0 ? '+' : '-') + h + (m ? ':' + (m < 10 ? '0' : '') + m : '');
+    labelEl.textContent = c.city + ' · ' + tzLabel;
+  }
+
+  /* ========================================
+     多时区时钟：切换函数
+     ======================================== */
+  // 长按删除模式相关状态
+  var isDeleteMode = false;
+  var longPressTimer = null;
+  var LONG_PRESS_DELAY = 500;
+  var longPressActivated = false;
+  var suppressNextClick = false;
+
+  function switchClock(newIndex) {
+    if (newIndex < 0 || newIndex >= clocks.length || newIndex === currentIndex) return;
+    // 记录当前显示角度作为切换起点（用累积角度，避免跨时区跳变）
+    switchFrom.sa = (lastAngles.sa !== null) ? lastAngles.sa : 0;
+    switchFrom.ma = (cumulative.ma !== null) ? cumulative.ma : 0;
+    switchFrom.ha = (cumulative.ha !== null) ? cumulative.ha : 0;
+    currentIndex = newIndex;
+    saveClocks();
+    isSwitching = true;
+    switchStartTime = performance.now();
+    // 重置累积，让 toCumulative 从新基准开始
+    cumulative.ma = null;
+    cumulative.ha = null;
+    lastAngles = { sa: null, ma: null, ha: null };
+    // 立即按新时区更新时间渐变主题
+    applyGradientTheme();
+    // 触发丝滑过渡效果：与 SWITCH_DURATION 同步移除 switching class（120帧无硬编码）
+    var wrapper = document.getElementById('clockWrapper');
+    if (wrapper) {
+      wrapper.classList.add('switching');
+      var labelEl = document.getElementById('clockLabel');
+      if (labelEl) labelEl.style.opacity = '0.55';
+      setTimeout(function () {
+        wrapper.classList.remove('switching');
+        if (labelEl) labelEl.style.opacity = '1';
+      }, SWITCH_DURATION);
+    }
+    updateDotsActive();
+    updateClockLabel();
+  }
+
+  /* ========================================
+     长按删除时钟模式
+     ======================================== */
+  function enterDeleteMode() {
+    if (currentIndex === 0) return;        // 本地时钟不可删除
+    if (isDeleteMode) return;
+    toggleAddButton(true);                  // 若卡片展开先收起
+    isDeleteMode = true;
+    longPressActivated = true;
+    suppressNextClick = true;               // 抑制长按抬起后紧接着的合成 click
+    var btn = document.getElementById('addButton');
+    if (btn) {
+      btn.classList.add('delete-mode');
+      btn.classList.remove('hidden');   // 达上限时也强制显示删除按钮（.hidden 由 updateAddButtonVisibility 在 MAX_CLOCKS 时添加）
+    }
+    var clockEl = document.querySelector('.clock');
+    if (clockEl) {
+      clockEl.classList.remove('pressing');
+      void clockEl.offsetWidth;             // 强制重排，重启按压动画
+      clockEl.classList.add('pressing');
+    }
+    vibrateAdd();                          // 长按进入删除模式触发 3 次短促震动
+  }
+
+  function exitDeleteMode() {
+    if (!isDeleteMode) return;
+    isDeleteMode = false;
+    var btn = document.getElementById('addButton');
+    if (btn) btn.classList.remove('delete-mode');
+    var clockEl = document.querySelector('.clock');
+    if (clockEl) clockEl.classList.remove('pressing');
+    // 退出删除模式后按当前时钟数恢复隐藏状态（达上限时仍隐藏加号）
+    updateAddButtonVisibility();
+  }
+
+  function deleteCurrentClock() {
+    if (currentIndex === 0) return;        // 本地时钟不可删除
+    vibrateDelete();                       // 点击删除按钮触发 4 次短促连续震动
+    // 记录当前角度作为切换起点
+    switchFrom.sa = (lastAngles.sa !== null) ? lastAngles.sa : 0;
+    switchFrom.ma = (cumulative.ma !== null) ? cumulative.ma : 0;
+    switchFrom.ha = (cumulative.ha !== null) ? cumulative.ha : 0;
+    clocks.splice(currentIndex, 1);
+    if (currentIndex >= clocks.length) currentIndex = clocks.length - 1;
+    saveClocks();
+    // 以既有切换动画丝滑过渡到新的当前时钟
+    isSwitching = true;
+    switchStartTime = performance.now();
+    cumulative.ma = null;
+    cumulative.ha = null;
+    lastAngles = { sa: null, ma: null, ha: null };
+    applyGradientTheme();
+    var wrapper = document.getElementById('clockWrapper');
+    if (wrapper) {
+      wrapper.classList.add('switching');
+      setTimeout(function () { wrapper.classList.remove('switching'); }, SWITCH_DURATION);
+    }
+    exitDeleteMode();
+    updateAddButtonVisibility();
+    buildDots();
+    buildCityOptions();   // 刷新城市选项禁用态（删除后恢复可选）
+    updateDotsActive();
+    updateClockLabel();
+  }
+
+  /* ========================================
+     主更新循环
+     ======================================== */
+
+  /**
+   * 每帧更新：旋转环、更新数字位置、节流应用时间渐变主题
+   */
+  function update() {
+    var rings = getCachedRings();
+    var secondsRing = rings.secondsRing;
+    var minutesRing = rings.minutesRing;
+    var hoursRing = rings.hoursRing;
+    if (!secondsRing || !minutesRing || !hoursRing) return;
+    var a = computeAngles();
+    var sa = a.sa;
+    var ma = toCumulative(cumulative.ma, a.ma);
+    var ha = toCumulative(cumulative.ha, a.ha);
+    cumulative.ma = ma;
+    cumulative.ha = ha;
+
+    // 更新环的旋转角度
+    if (lastAngles.sa !== sa) { secondsRing.style.transform = 'rotate(' + sa + 'deg)'; lastAngles.sa = sa; }
+    if (lastAngles.ma !== ma) { minutesRing.style.transform = 'rotate(' + ma + 'deg)'; lastAngles.ma = ma; }
+    if (lastAngles.ha !== ha) { hoursRing.style.transform   = 'rotate(' + ha + 'deg)'; lastAngles.ha = ha; }
+
+    // 更新数字位置：随环公转 + 自身反向旋转保持正向
+    for (var i = 0; i < numberData.length; i++) {
+      var d = numberData[i];
+      var ringAngle = 0;
+      if (d.ringKey === 'seconds') ringAngle = sa;
+      else if (d.ringKey === 'minutes') ringAngle = ma;
+      else if (d.ringKey === 'hours') ringAngle = ha;
+      if (d._lastRingAngle === ringAngle) continue;
+      d._lastRingAngle = ringAngle;
+      var orbitAngle = d.baseAngle + ringAngle;
+      var spinAngle = -orbitAngle;
+      d.el.style.transform =
+        'translate(-50%, -50%) rotate(' + orbitAngle + 'deg) translateY(' + (-d.radius) + 'px) rotate(' + spinAngle + 'deg)';
+    }
+
+    // 时间渐变主题节流：每 1 秒更新一次 CSS 变量
+    var now = performance.now();
+    if (now - lastLightingTime > LIGHTING_INTERVAL) {
+      lastLightingTime = now;
+      applyGradientTheme();
+    }
+  }
+
+  // 时间渐变主题节流变量（每 1 秒更新一次，保证渐变丝滑）
+  var lastLightingTime = 0;
+  var LIGHTING_INTERVAL = 1000;
+
+  /**
+   * 动画循环：使用requestAnimationFrame实现流畅动画
+   */
+  function loop(timestamp) {
+    var now = timestamp || performance.now();
+    // 空闲分级降帧：仅丢帧，不修改任何动画时长/曲线/效果
+    //   - 空闲 < 10 秒：不节流，跟随设备刷新率上限（120Hz 设备即 120fps）
+    //   - 10 秒 ≤ 空闲 < 60 秒：节流至 ~60Hz
+    //   - 空闲 ≥ 60 秒：节流至 ~30Hz
+    var idle = now - lastInteractionTime;
+    var minFrame = 0;  // 默认不节流（活跃态全速）
+    if (idle > IDLE_TIER_30HZ) {
+      minFrame = MIN_FRAME_30;       // 超过 1 分钟 → 30Hz
+    } else if (idle > IDLE_TIER_60HZ) {
+      minFrame = MIN_FRAME_60;       // 超过 10 秒 → 60Hz
+    }
+    if (minFrame > 0 && (now - lastUpdateTime) < minFrame) {
+      rafId = requestAnimationFrame(loop);
+      return;
+    }
+    lastUpdateTime = now;
+    update();
+    rafId = requestAnimationFrame(loop);
+  }
+
+  /* ========================================
+     多时区时钟：UI 构建与交互
+     ======================================== */
+  function buildCityOptions() {
+    var card = document.getElementById('cityCard');
+    if (!card) return;
+    card.innerHTML = '';
+    for (var i = 0; i < CITY_OPTIONS.length; i++) {
+      (function (opt) {
+        var el = document.createElement('div');
+        el.className = 'city-option';
+        // 时区去重：已添加时区的城市选项标记为禁用态
+        var isAdded = false;
+        for (var j = 0; j < clocks.length; j++) {
+          if (clocks[j].tzOffsetMinutes === opt.tz) { isAdded = true; break; }
+        }
+        if (isAdded) el.classList.add('disabled');
+        var h = Math.floor(Math.abs(opt.tz) / 60);
+        var m = Math.abs(opt.tz) % 60;
+        var tzLabel = 'UTC' + (opt.tz >= 0 ? '+' : '-') + h + (m ? ':' + (m < 10 ? '0' : '') + m : '');
+        el.innerHTML = opt.city + '<span class="city-option__tz">' + tzLabel + '</span>';
+        el.addEventListener('click', function (e) {
+          e.stopPropagation();
+          if (isAdded) return;   // 禁用态城市选项不可点击
+          vibrateAdd();          // 点击时区选项触发与加号按钮相同的震动
+          addClock(opt.city, opt.tz);
+        });
+        card.appendChild(el);
+      })(CITY_OPTIONS[i]);
+    }
+  }
+
+  function toggleAddButton(forceClose) {
+    var btn = document.getElementById('addButton');
+    if (!btn) return;
+    if (forceClose) {
+      btn.classList.remove('open');
+    } else {
+      btn.classList.toggle('open');
+    }
+  }
+
+  function updateAddButtonVisibility() {
+    var btn = document.getElementById('addButton');
+    if (!btn) return;
+    if (clocks.length >= MAX_CLOCKS) {
+      btn.classList.add('hidden');
+      btn.classList.remove('open');
+    } else {
+      btn.classList.remove('hidden');
+    }
+  }
+
+  /**
+   * 保存时钟列表与当前索引到 localStorage
+   * 仅持久化本地首项之外的添加时钟；失败时静默降级
+   */
+  function saveClocks() {
+    try {
+      var extra = clocks.slice(1).map(function (c) {
+        return { city: c.city, tz: c.tzOffsetMinutes };
+      });
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({
+        clocks: extra,
+        currentIndex: currentIndex
+      }));
+    } catch (e) {
+      // 存储不可用时静默降级
+    }
+  }
+
+  /**
+   * 从 localStorage 恢复时钟列表与当前索引
+   * 本地首项始终重新生成；损坏数据静默回退本地默认
+   */
+  function loadClocks() {
+    try {
+      var raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return;
+      var data = JSON.parse(raw);
+      if (!data || !Array.isArray(data.clocks)) return;
+      // 重建：本地首项 + 恢复的添加时钟（上限 MAX_CLOCKS）
+      clocks = [{ id: 0, city: '本地', tzOffsetMinutes: LOCAL_TZ_OFFSET }];
+      nextClockId = 1;
+      for (var i = 0; i < data.clocks.length && clocks.length < MAX_CLOCKS; i++) {
+        var it = data.clocks[i];
+        if (it && typeof it.city === 'string' && typeof it.tz === 'number') {
+          clocks.push({ id: nextClockId++, city: it.city, tzOffsetMinutes: it.tz });
+        }
+      }
+      if (typeof data.currentIndex === 'number' &&
+          data.currentIndex >= 0 && data.currentIndex < clocks.length) {
+        currentIndex = data.currentIndex;
+      }
+    } catch (e) {
+      // 数据损坏时静默回退本地默认
+    }
+  }
+
+  function addClock(city, tz) {
+    if (clocks.length >= MAX_CLOCKS) return;
+    // 时区去重：已添加时钟的时区无法再添加相同的时钟
+    for (var i = 0; i < clocks.length; i++) {
+      if (clocks[i].tzOffsetMinutes === tz) return;
+    }
+    clocks.push({ id: nextClockId++, city: city, tzOffsetMinutes: tz });
+    saveClocks();
+    toggleAddButton(true);
+    updateAddButtonVisibility();
+    buildDots();
+    buildCityOptions();   // 刷新城市选项禁用态
+    switchClock(clocks.length - 1);
+  }
+
+  var lastDotsCount = -1;
+  function buildDots() {
+    var dots = document.getElementById('dots');
+    if (!dots) return;
+    if (clocks.length < 2) {
+      dots.style.display = 'none';
+      dots.innerHTML = '';
+      lastDotsCount = -1;
+      return;
+    }
+    dots.style.display = 'flex';
+    // 仅当数量变化时重建 DOM，避免破坏 CSS 过渡（丝滑切换）
+    if (clocks.length === lastDotsCount) return;
+    lastDotsCount = clocks.length;
+    dots.innerHTML = '';
+    for (var i = 0; i < clocks.length; i++) {
+      (function (idx) {
+        var d = document.createElement('div');
+        d.className = 'dot';
+        d.addEventListener('click', function () { switchClock(idx); });
+        dots.appendChild(d);
+      })(i);
+    }
+  }
+  function updateDotsActive() {
+    var dots = document.getElementById('dots');
+    if (!dots) return;
+    var children = dots.children;
+    for (var i = 0; i < children.length; i++) {
+      if (i === currentIndex) children[i].classList.add('active');
+      else children[i].classList.remove('active');
+    }
+  }
+
+  /* 滑动切换：在时钟区域监听水平滑动 */
+  function setupSwipe() {
+    var clockEl = document.querySelector('.clock');
+    if (!clockEl) return;
+    var startX = 0, startY = 0, tracking = false;
+    clockEl.addEventListener('touchstart', function (e) {
+      if (e.touches.length === 1) {
+        startX = e.touches[0].clientX;
+        startY = e.touches[0].clientY;
+        tracking = true;
+        if (longPressTimer) clearTimeout(longPressTimer);
+        longPressTimer = setTimeout(function () {
+          longPressTimer = null;
+          enterDeleteMode();
+        }, LONG_PRESS_DELAY);
+      }
+    }, { passive: true });
+    clockEl.addEventListener('touchmove', function (e) {
+      if (tracking && longPressTimer && e.touches.length === 1) {
+        var dx = e.touches[0].clientX - startX;
+        var dy = e.touches[0].clientY - startY;
+        if (Math.abs(dx) > 10 || Math.abs(dy) > 10) {
+          clearTimeout(longPressTimer);
+          longPressTimer = null;
+        }
+      }
+    }, { passive: true });
+    clockEl.addEventListener('touchend', function (e) {
+      if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
+      if (longPressActivated) {
+        longPressActivated = false;
+        if (e.cancelable) e.preventDefault();   // 阻止长按抬起后的合成 click，避免立即退出删除模式
+        tracking = false;
+        return;
+      }
+      if (!tracking) return;
+      tracking = false;
+      var dx = (e.changedTouches[0].clientX) - startX;
+      var dy = (e.changedTouches[0].clientY) - startY;
+      if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) {
+        if (dx < 0) switchClock(currentIndex + 1);
+        else switchClock(currentIndex - 1);
+      }
+    }, { passive: false });
+  }
+
+  /* ========================================
+     初始化与事件绑定
+     ======================================== */
+
+  /**
+   * 启动时钟
+   */
+  function start() {
+    syncNetworkTime();  // 首次同步时间
+    buildDial();        // 构建表盘刻度和数字
+    animStartTime = performance.now();
+    animating = true;
+    applyGradientTheme();    // 启动时立即应用一次时间渐变主题
+    if (rafId === null) {
+      rafId = requestAnimationFrame(loop);
+    }
+  }
+
+  /**
+   * 窗口大小变化处理：防抖后重新构建表盘
+   */
+  function onResize() {
+    if (resizeTimer !== null) {
+      clearTimeout(resizeTimer);
+    }
+    resizeTimer = setTimeout(function () {
+      resizeTimer = null;
+      buildDial();
+    }, 150);
+  }
+
+  /**
+   * 初始化入口
+   */
+  function init() {
+    loadClocks();
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', start, { once: true });
+    } else {
+      start();
+    }
+    window.addEventListener('resize', onResize);
+
+    // 多时区时钟：UI 构建、按钮可见性、点式进度条、滑动切换
+    buildCityOptions();
+    updateAddButtonVisibility();
+    buildDots();
+    updateDotsActive();
+    updateClockLabel();
+    setupSwipe();
+
+    // 添加按钮点击：展开/收回
+    var addBtn = document.getElementById('addButton');
+    if (addBtn) {
+      addBtn.addEventListener('click', function (e) {
+        if (isDeleteMode) {
+          deleteCurrentClock();
+          return;
+        }
+        if (e.target.closest('.city-option')) return;
+        vibrateAdd();          // 点击加号按钮触发 3 次短促震动
+        toggleAddButton(false);
+      });
+    }
+    // 点击卡片外收回
+    document.addEventListener('click', function (e) {
+      if (suppressNextClick) {
+        suppressNextClick = false;
+        return;
+      }
+      var btn = document.getElementById('addButton');
+      if (isDeleteMode && btn && !btn.contains(e.target)) {
+        exitDeleteMode();
+        return;
+      }
+      if (btn && btn.classList.contains('open') && !btn.contains(e.target)) {
+        toggleAddButton(true);
+      }
+    });
+
+    // 任意触摸/点击瞬间恢复全刷新率（120Hz 设备即 120fps）
+    function resetIdle() { lastInteractionTime = performance.now(); }
+    document.addEventListener('touchstart', resetIdle, { passive: true });
+    document.addEventListener('mousedown', resetIdle, { passive: true });
+    document.addEventListener('click', resetIdle, { passive: true });
+
+    setInterval(syncNetworkTime, 5 * 60 * 1000);  // 每5分钟重新同步一次时间
+
+    // 页面可见性 API：后台时暂停动画循环，节省功耗
+    document.addEventListener('visibilitychange', function () {
+      if (document.hidden) {
+        // 页面不可见：停止动画循环
+        if (rafId !== null) {
+          cancelAnimationFrame(rafId);
+          rafId = null;
+        }
+      } else {
+        // 页面重新可见：恢复动画
+        lastLightingTime = 0;  // 立即触发时间渐变主题更新
+        if (rafId === null) {
+          rafId = requestAnimationFrame(loop);
+        }
+      }
+    });
+
+    // 防烧屏：每 5 分钟垂直微移时钟位置（OLED 屏幕保护）
+    var BURN_IN_INTERVAL = 300000;  // 5 分钟
+    var burnInStep = 0;
+    // 8 个垂直偏移位置循环（仅上下移动，最大 4px，视觉不可察觉）
+    var burnInOffsets = [0, -2, -4, -2, 0, 2, 4, 2];
+    setInterval(function () {
+      if (!cachedWrapper) {
+        cachedWrapper = document.getElementById('clockWrapper');
+      }
+      if (cachedWrapper) {
+        burnInStep = (burnInStep + 1) % burnInOffsets.length;
+        var dy = burnInOffsets[burnInStep];
+        cachedWrapper.style.transform = 'translate(0px, ' + dy + 'px)';
+      }
+    }, BURN_IN_INTERVAL);
+  }
+
+  init();
+})();
+  </script>
+</body>
+</html>
